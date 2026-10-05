@@ -49,16 +49,26 @@ def middle_snake(a, b):
     Both a and b are non-empty, and a[0] != b[0], a[-1] != b[-1] (the caller
     trims common prefix and suffix first).
 
-    v1[k] is the furthest x reached on diagonal k (k = x - y) by the forward
-    search; v2[k] is the same for the reverse search, measured from the end.
-    The arrays are indexed with an offset so negative k works.
+    v1[offset + k] is the furthest x reached on diagonal k (k = x - y) by the
+    forward search from (0, 0). v2[offset + k] is the same for the reverse
+    search from (n, m), run on the reversed sequences, so x there counts
+    elements from the end. The loops walk the array index o = offset + k
+    directly, which saves arithmetic in the hot loop.
+
+    Entries never visited stay -1. Diagonals -d-1 and d+1 are never visited
+    before step d, so the classic "k == -d / k == d" boundary tests are not
+    needed: at k = -d the left neighbour is -1 and we move down, at k = d
+    the right neighbour is -1 and we move right.
+
     Returns (x, y), or None if no split was found (should not happen).
     """
     n = len(a)
     m = len(b)
+    ar = a[::-1]                    # reversed copies for the reverse search
+    br = b[::-1]
     max_d = (n + m + 1) // 2
-    offset = max_d
-    size = 2 * max_d + 2
+    offset = max_d + 1
+    size = 2 * max_d + 4
     v1 = [-1] * size
     v2 = [-1] * size
     v1[offset + 1] = 0
@@ -67,62 +77,63 @@ def middle_snake(a, b):
     # If delta is odd the paths can first meet during a forward step,
     # otherwise during a reverse step.
     front = (delta & 1) == 1
+    # Index of diagonal (delta - k) in the other array is (o_mirror - o).
+    o_mirror = 2 * offset + delta
     # k1start/k1end (and k2...) shrink the diagonal range once a path runs
     # off the edge of the edit graph, so we never walk outside the grid.
     k1start = k1end = k2start = k2end = 0
 
     for d in range(max_d + 1):
         # ---- forward search: D-paths starting at (0, 0) ----
-        for k1 in range(-d + k1start, d + 1 - k1end, 2):
-            k1_off = offset + k1
+        for o in range(offset - d + k1start, offset + d + 1 - k1end, 2):
             # Choose the neighbour diagonal that reaches further:
-            # come down from k+1 (an insertion) or right from k-1 (a deletion).
-            if k1 == -d or (k1 != d and v1[k1_off - 1] < v1[k1_off + 1]):
-                x1 = v1[k1_off + 1]
-            else:
-                x1 = v1[k1_off - 1] + 1
-            y1 = x1 - k1
+            # down from k+1 (an insertion) or right from k-1 (a deletion).
+            x = v1[o + 1]
+            left = v1[o - 1]
+            if left >= x:
+                x = left + 1
+            y = x - o + offset
             # Follow the snake: a run of equal elements (diagonal moves).
-            while x1 < n and y1 < m and a[x1] == b[y1]:
-                x1 += 1
-                y1 += 1
-            v1[k1_off] = x1
-            if x1 > n:
+            while x < n and y < m and a[x] == b[y]:
+                x += 1
+                y += 1
+            v1[o] = x
+            if x > n:
                 k1end += 2          # ran off the right edge
-            elif y1 > m:
+            elif y > m:
                 k1start += 2        # ran off the bottom edge
             elif front:
-                # Does the reverse (d-1)-path on this diagonal overlap us?
-                k2_off = offset + delta - k1
-                if 0 <= k2_off < size and v2[k2_off] != -1:
-                    if x1 >= n - v2[k2_off]:
-                        return x1, y1
+                # Does the reverse (d-1)-path on the mirrored diagonal reach
+                # past us? Then the two paths overlap: middle snake found.
+                o2 = o_mirror - o
+                if 0 <= o2 < size:
+                    x2 = v2[o2]
+                    if x2 != -1 and x >= n - x2:
+                        return x, y
 
         # ---- reverse search: D-paths starting at (n, m) ----
-        for k2 in range(-d + k2start, d + 1 - k2end, 2):
-            k2_off = offset + k2
-            if k2 == -d or (k2 != d and v2[k2_off - 1] < v2[k2_off + 1]):
-                x2 = v2[k2_off + 1]
-            else:
-                x2 = v2[k2_off - 1] + 1
-            y2 = x2 - k2
+        for o in range(offset - d + k2start, offset + d + 1 - k2end, 2):
+            x = v2[o + 1]
+            left = v2[o - 1]
+            if left >= x:
+                x = left + 1
+            y = x - o + offset
             # Snake backwards from the end of both sequences.
-            while x2 < n and y2 < m and a[n - x2 - 1] == b[m - y2 - 1]:
-                x2 += 1
-                y2 += 1
-            v2[k2_off] = x2
-            if x2 > n:
+            while x < n and y < m and ar[x] == br[y]:
+                x += 1
+                y += 1
+            v2[o] = x
+            if x > n:
                 k2end += 2
-            elif y2 > m:
+            elif y > m:
                 k2start += 2
             elif not front:
-                # Does the forward d-path on this diagonal overlap us?
-                k1_off = offset + delta - k2
-                if 0 <= k1_off < size and v1[k1_off] != -1:
-                    x1 = v1[k1_off]
-                    y1 = x1 - (k1_off - offset)
-                    if x1 >= n - x2:
-                        return x1, y1
+                # Does the forward d-path on the mirrored diagonal overlap us?
+                o1 = o_mirror - o
+                if 0 <= o1 < size:
+                    x1 = v1[o1]
+                    if x1 != -1 and x1 >= n - x:
+                        return x1, x1 - o1 + offset
     return None
 
 
