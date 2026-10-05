@@ -170,12 +170,32 @@ def diff_marks(a, b):
 
 
 def diff_lines(a, b):
-    """Line diff: map every distinct line to a small integer, so comparing
-    two lines is one integer comparison, then run Myers on the integers."""
+    """Line diff with a speed-up that keeps the result minimal.
+
+    1. Map every distinct line to a small integer, so comparisons are cheap.
+    2. A line that never appears in the other file can never be a keep, so it
+       must be a delete (or insert) in every edit script. Mark it directly and
+       run Myers only on the remaining lines. This does not change the number
+       of edits, but makes very different files much faster.
+    """
     ids = {}
     a_ids = [ids.setdefault(line, len(ids)) for line in a]
     b_ids = [ids.setdefault(line, len(ids)) for line in b]
-    return diff_marks(a_ids, b_ids)
+
+    in_a = set(a_ids)
+    in_b = set(b_ids)
+    a_keep_idx = [i for i, v in enumerate(a_ids) if v in in_b]
+    b_keep_idx = [j for j, v in enumerate(b_ids) if v in in_a]
+
+    del_a = [True] * len(a)
+    ins_b = [True] * len(b)
+    sub_del, sub_ins = diff_marks([a_ids[i] for i in a_keep_idx],
+                                  [b_ids[j] for j in b_keep_idx])
+    for pos, i in enumerate(a_keep_idx):
+        del_a[i] = sub_del[pos]
+    for pos, j in enumerate(b_keep_idx):
+        ins_b[j] = sub_ins[pos]
+    return del_a, ins_b
 
 
 # ---------------------------------------------------------------------------
