@@ -229,7 +229,22 @@ def blocks(del_a, ins_b):
             break
 
 
-def render(a, b):
+def ranges_text(marks):
+    """Turn [False, True, True, False, True] into '1-3,4-5' ('.' if none)."""
+    out = []
+    start = None
+    for idx, flag in enumerate(marks):
+        if flag and start is None:
+            start = idx
+        elif not flag and start is not None:
+            out.append("%d-%d" % (start, idx))
+            start = None
+    if start is not None:
+        out.append("%d-%d" % (start, len(marks)))
+    return ",".join(out) if out else "."
+
+
+def render(a, b, highlight):
     del_a, ins_b = diff_lines(a, b)
     out = []
     append = out.append
@@ -241,8 +256,16 @@ def render(a, b):
         inss = list(q)
         for i in dels:
             append(b"-" + a[i] + b"\n")
-        for j in inss:
+        for t, j in enumerate(inss):
             append(b"+" + b[j] + b"\n")
+            if highlight and t < len(dels):
+                # Pair the t-th '-' line with the t-th '+' line and run the
+                # same Myers diff on their characters (Unicode code points).
+                old = a[dels[t]].decode("utf-8")
+                new = b[j].decode("utf-8")
+                c_del, c_ins = diff_marks(old, new)
+                line = "? %s | %s\n" % (ranges_text(c_del), ranges_text(c_ins))
+                append(line.encode("ascii"))
     return b"".join(out)
 
 
@@ -257,7 +280,7 @@ def main() -> int:
     except OSError as e:
         print("error: cannot read file: %s" % e, file=sys.stderr)
         return 2
-    sys.stdout.buffer.write(render(a, b))
+    sys.stdout.buffer.write(render(a, b, command == "highlight"))
     sys.stdout.buffer.flush()
     return 0
 
